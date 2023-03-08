@@ -27,6 +27,14 @@ unload:
 client: client.c
 	$(CC) -o $@ $^
 
+exp1: ./experiment/experiment1.c
+	$(CC) -o $@ $^
+	mv exp1 ./experiment
+
+exp2: ./experiment/experiment2.c
+	$(CC) -o $@ $^
+	mv exp2 ./experiment
+
 PRINTF = env printf
 PASS_COLOR = \e[32;01m
 NO_COLOR = \e[0m
