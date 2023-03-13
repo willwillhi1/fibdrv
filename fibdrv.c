@@ -7,7 +7,7 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 
-
+#include "bignumber.h"
 
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_AUTHOR("National Cheng Kung University, Taiwan");
@@ -19,14 +19,14 @@ MODULE_VERSION("0.1");
 /* MAX_LENGTH is set to 92 because
  * ssize_t can't fit the number > 92
  */
-#define MAX_LENGTH 300
+#define MAX_LENGTH 1000
 
 static dev_t fib_dev = 0;
 static struct cdev *fib_cdev;
 static struct class *fib_class;
 static DEFINE_MUTEX(fib_mutex);
 
-static long long double_fib(long long n)
+static unsigned long long double_fib(long long n)
 {
     /* find first 1 */
     uint8_t h = 63 - __builtin_clzll(n);
@@ -56,6 +56,68 @@ static unsigned long long easy_fib(long long k)
     return f[k];
 }
 
+/* calc n-th Fibonacci number and save into dest */
+void bn_fib(bn *dest, unsigned int n)
+{
+    bn_resize(dest, 1);
+    if (n < 2) {  // Fib(0) = 0, Fib(1) = 1
+        dest->number[0] = n;
+        return;
+    }
+
+    bn *a = bn_alloc(1);
+    bn *b = bn_alloc(1);
+    dest->number[0] = 1;
+
+    for (unsigned int i = 1; i < n; i++) {
+        bn_swap(b, dest);
+        bn_add(a, b, dest);
+        bn_swap(a, b);
+    }
+    bn_free(a);
+    bn_free(b);
+}
+
+void bn_fib_fdoubling(bn *dest, unsigned int n)
+{
+    bn_resize(dest, 1);
+    if (n < 2) {  // Fib(0) = 0, Fib(1) = 1
+        dest->number[0] = n;
+        return;
+    }
+
+    bn *f1 = dest;        /* F(k) */
+    bn *f2 = bn_alloc(1); /* F(k+1) */
+    f1->number[0] = 0;
+    f2->number[0] = 1;
+    bn *k1 = bn_alloc(1);
+    bn *k2 = bn_alloc(1);
+
+    for (unsigned int i = 1U << 31; i; i >>= 1) {
+        /* F(2k) = F(k) * [ 2 * F(k+1) – F(k) ] */
+        bn_cpy(k1, f2);
+        bn_lshift(k1, 1, k1);
+        bn_sub(k1, f1, k1);
+        bn_mult(k1, f1, k1);
+        /* F(2k+1) = F(k)^2 + F(k+1)^2 */
+        bn_mult(f1, f1, f1);
+        bn_mult(f2, f2, f2);
+        bn_cpy(k2, f1);
+        bn_add(k2, f2, k2);
+        if (n & i) {
+            bn_cpy(f1, k2);
+            bn_cpy(f2, k1);
+            bn_add(f2, k2, f2);
+        } else {
+            bn_cpy(f1, k1);
+            bn_cpy(f2, k2);
+        }
+    }
+    bn_free(f2);
+    bn_free(k1);
+    bn_free(k2);
+}
+
 static int fib_open(struct inode *inode, struct file *file)
 {
     if (!mutex_trylock(&fib_mutex)) {
@@ -77,10 +139,17 @@ static ssize_t fib_read(struct file *file,
                         size_t size,
                         loff_t *offset)
 {
-    // ktime_t k1 = ktime_get();
-    return double_fib(*offset);
-    // ktime_t k2 = ktime_sub(ktime_get(), k1);
-    // return ktime_to_ns(k2);
+    ktime_t k1 = ktime_get();
+    bn *fib = bn_alloc(1);
+    bn_fib_fdoubling(fib, *offset);
+    char *p = bn_to_string(*fib);
+    size_t len = strlen(p) + 1;
+    copy_to_user(buf, p, len);
+    ktime_t k2 = ktime_sub(ktime_get(), k1);
+    bn_free(fib);
+    kfree(p);
+    ktime_t k3 = ktime_sub(ktime_get(), k2);
+    return ktime_to_ns(k3);
 }
 
 /* write operation is skipped */
@@ -89,10 +158,10 @@ static ssize_t fib_write(struct file *file,
                          size_t size,
                          loff_t *offset)
 {
-    ktime_t k1 = ktime_get();
-    double_fib(*offset);
-    ktime_t k2 = ktime_sub(ktime_get(), k1);
-    return ktime_to_ns(k2);
+    // ktime_t k1 = ktime_get();
+    return double_fib(*offset);
+    // ktime_t k2 = ktime_sub(ktime_get(), k1);
+    // return ktime_to_ns(k2);
 }
 
 static loff_t fib_device_lseek(struct file *file, loff_t offset, int orig)
