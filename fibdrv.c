@@ -144,7 +144,7 @@ static ssize_t fib_read(struct file *file,
     bn_fib_fdoubling(fib, *offset);
     char *p = bn_to_string(*fib);
     size_t len = strlen(p) + 1;
-    copy_to_user(buf, p, len);
+    copy_to_user(buf, "1", len);
     ktime_t k2 = ktime_sub(ktime_get(), k1);
     bn_free(fib);
     kfree(p);

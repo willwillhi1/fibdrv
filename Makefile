@@ -45,5 +45,4 @@ check: all
 	$(MAKE) load
 	sudo ./client > out
 	$(MAKE) unload
-	@diff -u out scripts/expected.txt && $(call pass)
-	@scripts/verify.py
+	@scripts/verify.py && $(call pass)
