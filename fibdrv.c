@@ -118,6 +118,41 @@ void bn_fib_fdoubling(bn *dest, unsigned int n)
     bn_free(k2);
 }
 
+void bn_fib_fdoubling_v1(bn *dest, unsigned int n)
+{
+    bn_resize(dest, 1);
+    if (n < 2) {  // Fib(0) = 0, Fib(1) = 1
+        dest->number[0] = n;
+        return;
+    }
+
+    bn *f1 = dest;        /* F(k) */
+    bn *f2 = bn_alloc(1); /* F(k+1) */
+    f1->number[0] = 0;
+    f2->number[0] = 1;
+    bn *k1 = bn_alloc(1);
+    bn *k2 = bn_alloc(1);
+
+    for (unsigned int i = 1U << (31 - __builtin_clz(n)); i; i >>= 1) {
+        // F(2k) = F(k) * [ 2 * F(k+1) – F(k) ]
+        bn_lshift(f2, 1, k1);  // k1 = 2 * F(k+1)
+        bn_mult(k1, f1, k2);   // k2 = 2 * F(k+1) * F(k)
+        bn_mult(f1, f1, k1);   // k1 = F(k) * F(k)
+        bn_sub(k2, k1, f1);    // f1 = F(2k) = 2 * F(k+1) * F(k) - F(k) * F(k)
+        // F(2k+1) = F(k)^2 + F(k+1)^2
+        bn_mult(f2, f2, k2);  // k2 = F(k+1) * F(k+1)
+        bn_add(k1, k2, f2);   // f2 = F(2k+1) = F(k)^2 + F(k+1)^2
+
+        if (n & i) {
+            bn_swap(f1, f2);     // f1 = F(2k+1)
+            bn_add(f1, f2, f2);  // f2 = F(2k+2)
+        }
+    }
+    bn_free(f2);
+    bn_free(k1);
+    bn_free(k2);
+}
+
 static int fib_open(struct inode *inode, struct file *file)
 {
     if (!mutex_trylock(&fib_mutex)) {
@@ -139,17 +174,16 @@ static ssize_t fib_read(struct file *file,
                         size_t size,
                         loff_t *offset)
 {
-    ktime_t k1 = ktime_get();
     bn *fib = bn_alloc(1);
-    bn_fib_fdoubling(fib, *offset);
+    ktime_t k1 = ktime_get();
+    bn_fib_fdoubling_v1(fib, *offset);
+    ktime_t k2 = ktime_sub(ktime_get(), k1);
     char *p = bn_to_string(*fib);
     size_t len = strlen(p) + 1;
-    copy_to_user(buf, "1", len);
-    ktime_t k2 = ktime_sub(ktime_get(), k1);
+    // copy_to_user(buf, fib->number, sizeof(unsigned int)*size);
+    copy_to_user(buf, p, len);
     bn_free(fib);
-    kfree(p);
-    ktime_t k3 = ktime_sub(ktime_get(), k2);
-    return ktime_to_ns(k3);
+    return ktime_to_ns(k2);
 }
 
 /* write operation is skipped */
@@ -158,10 +192,16 @@ static ssize_t fib_write(struct file *file,
                          size_t size,
                          loff_t *offset)
 {
-    // ktime_t k1 = ktime_get();
-    return double_fib(*offset);
-    // ktime_t k2 = ktime_sub(ktime_get(), k1);
-    // return ktime_to_ns(k2);
+    bn *fib = bn_alloc(1);
+    ktime_t k1 = ktime_get();
+    bn_fib_fdoubling(fib, *offset);
+    ktime_t k2 = ktime_sub(ktime_get(), k1);
+    char *p = bn_to_string(*fib);
+    size_t len = strlen(p) + 1;
+    copy_to_user(buf, p, len);
+    bn_free(fib);
+    kfree(p);
+    return ktime_to_ns(k2);
 }
 
 static loff_t fib_device_lseek(struct file *file, loff_t offset, int orig)

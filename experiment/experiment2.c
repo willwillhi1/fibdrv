@@ -17,9 +17,8 @@ static inline long elapse(struct timespec start, struct timespec end)
 
 int main()
 {
-    struct timespec t1, t2;
-    char buf[1];
-    int offset = 93; /* TODO: try test something bigger than the limit */
+    char buf[1000];
+    int offset = 1000; /* TODO: try test something bigger than the limit */
 
     int fd = open(FIB_DEV, O_RDWR);
     if (fd < 0) {
@@ -30,16 +29,13 @@ int main()
     for (int i = 0; i <= offset; i++) {
         lseek(fd, i, SEEK_SET);
 
-        clock_gettime(CLOCK_REALTIME, &t1);
-        long kernel_time = write(fd, buf, 1);
-        clock_gettime(CLOCK_REALTIME, &t2);
+        // clock_gettime(CLOCK_REALTIME, &t1);
+        long fib_v1_time = read(fd, buf, 1000);
+        long fib_v0_time = write(fd, buf, 1000);
+        // clock_gettime(CLOCK_REALTIME, &t2);
         printf("%d ", i);
-        /* user space execute time */
-        printf("%ld ", elapse(t1, t2));
-        /* kernel space execute time */
-        printf("%ld ", kernel_time);
-        /* transfer time between kernel and user space */
-        printf("%ld\n", elapse(t1, t2) - kernel_time);
+        printf("%ld ", fib_v1_time);
+        printf("%ld\n", fib_v0_time);
     }
 
     close(fd);
