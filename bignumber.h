@@ -16,10 +16,14 @@
 #define DIV_ROUNDUP(x, len) (((x) + (len) -1) / (len))
 #endif
 
+#define INIT_SIZE 4
+#define CHUNK_SIZE 4
+
 /* number[size - 1] = msb, number[0] = lsb */
 typedef struct _bn {
     unsigned int *number;
     unsigned int size;
+    unsigned int capacity;
     int sign;
 } bn;
 
@@ -45,10 +49,18 @@ static int bn_clz(const bn *src)
  */
 bn *bn_alloc(size_t size)
 {
+    // bn *new = (bn *) kmalloc(sizeof(bn), GFP_KERNEL);
     bn *new = (bn *) kmalloc(sizeof(bn), GFP_KERNEL);
-    new->number = kmalloc(sizeof(int) * size, GFP_KERNEL);
-    memset(new->number, 0, sizeof(int) * size);
     new->size = size;
+    new->capacity = size >= INIT_SIZE
+                        ? DIV_ROUNDUP(size + 1, CHUNK_SIZE) * CHUNK_SIZE
+                        : INIT_SIZE;
+    // new->capacity = size > INIT_SIZE ? size : INIT_SIZE;
+    // new->number = kmalloc(sizeof(int) * size, GFP_KERNEL);
+    new->number =
+        (unsigned int *) kmalloc(sizeof(int) * new->capacity, GFP_KERNEL);
+    memset(new->number, 0, sizeof(unsigned int) * size);
+    // memset(new->number, 0, sizeof(unsigned int) * new->capacity);
     new->sign = 0;
     return new;
 }
@@ -61,7 +73,9 @@ int bn_free(bn *src)
 {
     if (src == NULL)
         return -1;
+    // kfree(src->number);
     kfree(src->number);
+    // kfree(src);
     kfree(src);
     return 0;
 }
@@ -78,14 +92,27 @@ static int bn_resize(bn *src, size_t size)
     if (size == src->size)
         return 0;
     if (size == 0)  // prevent krealloc(0) = kfree, which will cause problem
+    {
         return bn_free(src);
-    src->number = krealloc(src->number, sizeof(int) * size, GFP_KERNEL);
+    }
+    if (src->capacity < size) {
+        // src->capacity = DIV_ROUNDUP(size, CHUNK_SIZE)*CHUNK_SIZE;
+        src->capacity = (size + (CHUNK_SIZE - 1)) & ~(CHUNK_SIZE - 1);
+        // src->number = krealloc(src->number, sizeof(int) * src->capacity,
+        // GFP_KERNEL);
+        src->number = krealloc(
+            src->number, sizeof(unsigned int) * src->capacity, GFP_KERNEL);
+    }
     if (!src->number) {  // realloc fails
         return -1;
     }
-    if (size > src->size)
+    if (size > src->size) {
         memset(src->number + src->size, 0, sizeof(int) * (size - src->size));
+        // printf("4\n");
+    }
+
     src->size = size;
+    // printf("2\n");
     return 0;
 }
 
@@ -110,6 +137,7 @@ char *bn_to_string(bn src)
 {
     // log10(x) = log2(x) / log2(10) ~= log2(x) / 3.322
     size_t len = (8 * sizeof(int) * src.size) / 3 + 2 + src.sign;
+    // char *s = kmalloc(len, GFP_KERNEL);
     char *s = kmalloc(len, GFP_KERNEL);
     char *p = s;
 

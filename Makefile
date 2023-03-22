@@ -39,6 +39,10 @@ exp3: ./experiment/experiment3.c
 	$(CC) -o $@ $^
 	mv exp3 ./experiment
 
+exp4: ./experiment/experiment4.c
+	$(CC) -o $@ $^
+	mv exp4 ./experiment
+
 PRINTF = env printf
 PASS_COLOR = \e[32;01m
 NO_COLOR = \e[0m
