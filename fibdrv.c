@@ -4,8 +4,10 @@
 #include <linux/init.h>
 #include <linux/kdev_t.h>
 #include <linux/kernel.h>
+#include <linux/kobject.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/sysfs.h>
 
 #include "bignumber.h"
 
@@ -25,6 +27,10 @@ static dev_t fib_dev = 0;
 static struct cdev *fib_cdev;
 static struct class *fib_class;
 static DEFINE_MUTEX(fib_mutex);
+
+struct kobject *fib_ktime_kobj;
+static ktime_t kt;
+static long long kt_ns;
 
 static unsigned long long double_fib(long long n)
 {
@@ -198,6 +204,43 @@ const struct file_operations fib_fops = {
     .llseek = fib_device_lseek,
 };
 
+static ssize_t show(struct kobject *kobj,
+                    struct kobj_attribute *attr,
+                    char *buf)
+{
+    kt_ns = ktime_to_ns(kt);
+    return snprintf(buf, 16, "%lld\n", kt_ns);
+}
+
+static ssize_t store(struct kobject *kobj,
+                     struct kobj_attribute *attr,
+                     const char *buf,
+                     size_t count)
+{
+    int ret, n_th;
+    if (ret = kstrtoint(buf, 10, &n_th)) {
+        return ret;
+    }
+    bn *fib = bn_alloc(1);
+    kt = ktime_get();
+    bn_fib_fdoubling(fib, n_th);
+    kt = ktime_sub(ktime_get(), kt);
+    bn_free(fib);
+    return count;
+}
+
+static struct kobj_attribute ktime_attr =
+    __ATTR(kt_ns, 0664, show, store);  // rw-rw-r--
+
+static struct attribute *ktime_attrs[] = {
+    &ktime_attr.attr,
+    NULL,
+};
+
+static struct attribute_group ktime_attr_group = {
+    .attrs = ktime_attrs,
+};
+
 static int __init init_fib_dev(void)
 {
     int rc = 0;
@@ -243,7 +286,18 @@ static int __init init_fib_dev(void)
         rc = -4;
         goto failed_device_create;
     }
+
+    fib_ktime_kobj = kobject_create_and_add("fib_ktime", kernel_kobj);
+    if (!fib_ktime_kobj)
+        return -ENOMEM;
+
+    int retval = sysfs_create_group(fib_ktime_kobj, &ktime_attr_group);
+    if (retval)
+        goto failed_sysfs_create;
+
     return rc;
+failed_sysfs_create:
+    kobject_put(fib_ktime_kobj);
 failed_device_create:
     class_destroy(fib_class);
 failed_class_create:
@@ -260,6 +314,7 @@ static void __exit exit_fib_dev(void)
     class_destroy(fib_class);
     cdev_del(fib_cdev);
     unregister_chrdev_region(fib_dev, 1);
+    kobject_put(fib_ktime_kobj);
 }
 
 module_init(init_fib_dev);
