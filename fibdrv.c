@@ -141,17 +141,15 @@ static ssize_t fib_read(struct file *file,
                         loff_t *offset)
 {
     bn *fib = bn_alloc(1);
-    // ktime_t k1 = ktime_get();
     bn_fib_fdoubling(fib, *offset);
-    // ktime_t k2 = ktime_sub(ktime_get(), k1);
-    // char *p = bn_to_string(*fib);
-    // size_t len = strlen(p) + 1;
     int len = fib->size;
-    copy_to_user(buf, fib->number, sizeof(unsigned int) * len);
-    // copy_to_user(buf, p, len);
+    printk("__builtin_clz(fib->number[len-1]): %d\n",
+           __builtin_clz(fib->number[len - 1]));
+    int count = 32 - __builtin_clz(fib->number[len - 1]);
+    count = (count >> 3) + !!(count & 0x7);
+    copy_to_user(buf, fib->number, sizeof(unsigned int) * (len - 1) + count);
     bn_free(fib);
     return len;
-    // return ktime_to_ns(k2);
 }
 
 /* write operation is skipped */
@@ -161,14 +159,18 @@ static ssize_t fib_write(struct file *file,
                          loff_t *offset)
 {
     bn *fib = bn_alloc(1);
-    ktime_t k1 = ktime_get();
+    // ktime_t k1 = ktime_get();
     bn_fib_fdoubling(fib, *offset);
+    // ktime_t k2 = ktime_sub(ktime_get(), k1);
+    // char *p = bn_to_string(*fib);
+    // size_t len = strlen(p) + 1;
+    int len = fib->size;
+    ktime_t k1 = ktime_get();
+    // copy_to_user(buf, p, len);
+    copy_to_user(buf, fib->number, sizeof(unsigned int) * len);
     ktime_t k2 = ktime_sub(ktime_get(), k1);
-    char *p = bn_to_string(*fib);
-    size_t len = strlen(p) + 1;
-    copy_to_user(buf, p, len);
     bn_free(fib);
-    kfree(p);
+    // kfree(p);
     return ktime_to_ns(k2);
 }
 
